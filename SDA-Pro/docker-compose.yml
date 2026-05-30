@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: sdapro
+      POSTGRES_PASSWORD: sdapro123
+      POSTGRES_DB: sdapro
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  alert-ingestion-service:
+    build: ./services/alert-ingestion-service
+    ports:
+      - "3001:3001"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: sdapro
+      DB_PASS: sdapro123
+      DB_NAME: sdapro
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  enrichment-correlation-service:
+    build: ./services/enrichment-correlation-service
+    ports:
+      - "3002:3002"
+    environment:
+      DB_HOST: postgres
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_HOST: redis
+    depends_on:
+      - postgres
+      - rabbitmq
+      - redis
+
+  incident-management-service:
+    build: ./services/incident-management-service
+    ports:
+      - "3003:3003"
+    environment:
+      DB_HOST: postgres
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  response-orchestration-service:
+    build: ./services/response-orchestration-service
+    ports:
+      - "3004:3004"
+    environment:
+      DB_HOST: postgres
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  threat-intel-service:
+    build: ./services/threat-intel-service
+    ports:
+      - "3005:3005"
+    environment:
+      REDIS_HOST: redis
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - redis
+      - rabbitmq
+
+  audit-service:
+    build: ./services/audit-service
+    ports:
+      - "3006:3006"
+    environment:
+      DB_HOST: postgres
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  identity-service:
+    build: ./services/identity-service
+    ports:
+      - "3007:3007"
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    depends_on:
+      - postgres
+      - redis
+
+  soc-dashboard:
+    build: ./soc-dashboard
+    ports:
+      - "3000:3000"
+    depends_on:
+      - alert-ingestion-service
+
+volumes:
+  postgres_data:
