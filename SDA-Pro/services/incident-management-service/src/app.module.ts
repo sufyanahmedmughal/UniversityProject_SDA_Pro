@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { IncidentEntity } from './domain/incident/incident.entity.db';
+import { IncidentRepository } from './repositories/incident.repository';
+import { IncidentService } from './services/incident.service';
+import { IncidentController } from './controllers/incident.controller';
 
 @Module({
     imports: [
@@ -16,5 +19,7 @@ import { IncidentEntity } from './domain/incident/incident.entity.db';
         }),
         TypeOrmModule.forFeature([IncidentEntity]),
     ],
+    controllers: [IncidentController],
+    providers: [IncidentService, IncidentRepository],
 })
 export class AppModule { }

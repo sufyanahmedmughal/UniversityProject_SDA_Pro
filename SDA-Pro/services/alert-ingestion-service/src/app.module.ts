@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AlertEntity } from './domain/alert/alert.entity';
+import { AlertRepository } from './repositories/alert.repository';
+import { AlertIngestionService } from './services/ingestion/alert-ingestion.service';
+import { AlertIngestionController } from './controllers/alert-ingestion.controller';
 
 @Module({
     imports: [
@@ -12,9 +15,11 @@ import { AlertEntity } from './domain/alert/alert.entity';
             password: process.env.DB_PASS || 'sdapro123',
             database: process.env.DB_NAME || 'sdapro',
             entities: [AlertEntity],
-            synchronize: true, // auto creates tables
+            synchronize: true,
         }),
         TypeOrmModule.forFeature([AlertEntity]),
     ],
+    controllers: [AlertIngestionController],
+    providers: [AlertIngestionService, AlertRepository],
 })
 export class AppModule { }
