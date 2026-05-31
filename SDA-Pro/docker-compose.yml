@@ -1,6 +1,8 @@
 version: '3.8'
 
 services:
+
+  # ── Infrastructure ──────────────────────────────
   postgres:
     image: postgres:15
     environment:
@@ -11,11 +13,22 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/migration/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdapro"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -25,7 +38,19 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ── WebSocket Server ─────────────────────────────
+  websocket-service:
+    build: ./services/websocket-service
+    ports:
+      - "3008:3008"
+
+  # ── SOA Services ─────────────────────────────────
   alert-ingestion-service:
     build: ./services/alert-ingestion-service
     ports:
@@ -37,9 +62,12 @@ services:
       DB_PASS: sdapro123
       DB_NAME: sdapro
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      WS_SERVER_URL: http://websocket-service:3008
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   enrichment-correlation-service:
     build: ./services/enrichment-correlation-service
@@ -49,10 +77,14 @@ services:
       DB_HOST: postgres
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       REDIS_HOST: redis
+      WS_SERVER_URL: http://websocket-service:3008
     depends_on:
-      - postgres
-      - rabbitmq
-      - redis
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   incident-management-service:
     build: ./services/incident-management-service
@@ -61,9 +93,12 @@ services:
     environment:
       DB_HOST: postgres
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      WS_SERVER_URL: http://websocket-service:3008
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   response-orchestration-service:
     build: ./services/response-orchestration-service
@@ -72,9 +107,12 @@ services:
     environment:
       DB_HOST: postgres
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      WS_SERVER_URL: http://websocket-service:3008
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   threat-intel-service:
     build: ./services/threat-intel-service
@@ -83,9 +121,12 @@ services:
     environment:
       REDIS_HOST: redis
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      WS_SERVER_URL: http://websocket-service:3008
     depends_on:
-      - redis
-      - rabbitmq
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   audit-service:
     build: ./services/audit-service
@@ -95,8 +136,10 @@ services:
       DB_HOST: postgres
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   identity-service:
     build: ./services/identity-service
@@ -106,15 +149,30 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
+  notification-service:
+    build: ./services/notification-service
+    ports:
+      - "3009:3009"
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # ── SOC Dashboard ─────────────────────────────────
   soc-dashboard:
     build: ./soc-dashboard
     ports:
       - "3000:3000"
     depends_on:
       - alert-ingestion-service
+      - incident-management-service
+      - websocket-service
 
 volumes:
   postgres_data:
