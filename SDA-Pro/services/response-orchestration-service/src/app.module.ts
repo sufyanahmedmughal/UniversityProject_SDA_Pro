@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
+import { ResponseController } from './controllers/response.controller';
 
 @Module({
-    imports: [],
-    controllers: [],
+    controllers: [ResponseController],
     providers: [],
 })
 export class AppModule { }
