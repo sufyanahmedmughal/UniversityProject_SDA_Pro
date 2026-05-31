@@ -1,36 +1,30 @@
-// PATTERN: Proxy — Caching Proxy
+// PATTERN: Proxy — Redis-backed Caching Proxy
 import { ThreatIntelProvider, ReputationResult, IndicatorType } from '../adapter/threat-intel-provider.interface';
+import { RedisCacheService } from '../cache/redis-cache.service';
 
 export class CachingProxy implements ThreatIntelProvider {
-    // In-memory cache (Redis integration in Step 7)
-    private cache = new Map<string, { result: ReputationResult; expiresAt: number }>();
-    private TTL_MS = 60 * 60 * 1000; // 1 hour
+    private cache: RedisCacheService;
 
-    constructor(private realProvider: ThreatIntelProvider) { }
+    constructor(private realProvider: ThreatIntelProvider) {
+        this.cache = new RedisCacheService();
+    }
 
     getProviderName(): string {
         return `CachingProxy(${this.realProvider.getProviderName()})`;
     }
 
     async checkReputation(indicator: string, type: IndicatorType): Promise<ReputationResult> {
-        const cacheKey = `${type}:${indicator}`;
+        const cacheKey = `threatintel:${type}:${indicator}`;
 
-        // Check cache first
-        const cached = this.cache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) {
-            console.log(`[CachingProxy] Cache HIT for ${cacheKey}`);
-            return cached.result;
+        const cached = await this.cache.get(cacheKey);
+        if (cached) {
+            console.log(`[CachingProxy] Redis HIT: ${cacheKey}`);
+            return cached;
         }
 
-        console.log(`[CachingProxy] Cache MISS for ${cacheKey} — calling real provider`);
+        console.log(`[CachingProxy] Redis MISS: ${cacheKey}`);
         const result = await this.realProvider.checkReputation(indicator, type);
-
-        // Store in cache
-        this.cache.set(cacheKey, {
-            result,
-            expiresAt: Date.now() + this.TTL_MS,
-        });
-
+        await this.cache.set(cacheKey, result);
         return result;
     }
 }
