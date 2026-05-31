@@ -1,0 +1,22 @@
+[
+  {
+    "source": "splunk",
+    "payload": {
+      "severity": "critical",
+      "src_ip": "185.220.101.45",
+      "dest_ip": "10.0.1.50",
+      "search_name": "Lateral Movement Detected",
+      "timestamp": "2024-01-15T10:30:00Z"
+    }
+  },
+  {
+    "source": "crowdstrike",
+    "payload": {
+      "severity": 95,
+      "created_timestamp": "2024-01-15T10:31:00Z",
+      "display_name": "Ransomware Execution Detected",
+      "device": { "local_ip": "10.0.1.50" },
+      "network_accesses": [{ "remote_address": "185.220.101.45" }]
+    }
+  }
+]
