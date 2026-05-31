@@ -1,14 +1,14 @@
-// PATTERN: Observer + Singleton — EventBusPublisher
+import * as amqp from 'amqplib';
+import axios from 'axios';
 import { Observer, Subject } from './observer.interface';
 import { DomainEvent } from '../schemas/domain-events';
 import { EventType } from '../../../shared/events/alert.events';
 
 export class EventBusPublisher implements Subject {
-  // PATTERN: Singleton
   private static instance: EventBusPublisher;
-
-  // PATTERN: Observer — registry
   private observers: Map<string, Observer[]> = new Map();
+  private rabbitChannel: amqp.Channel | null = null;
+  private wsServerUrl = process.env.WS_SERVER_URL || 'http://localhost:3008';
 
   private constructor() {}
 
@@ -19,12 +19,22 @@ export class EventBusPublisher implements Subject {
     return EventBusPublisher.instance;
   }
 
+  async connectRabbitMQ(): Promise<void> {
+    try {
+      const url = process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672';
+      const conn = await amqp.connect(url);
+      this.rabbitChannel = await conn.createChannel();
+      console.log('[EventBus] RabbitMQ connected');
+    } catch (err) {
+      console.error('[EventBus] RabbitMQ failed — using in-memory only');
+    }
+  }
+
   attach(eventType: string, observer: Observer): void {
     if (!this.observers.has(eventType)) {
       this.observers.set(eventType, []);
     }
     this.observers.get(eventType)!.push(observer);
-    console.log(`[EventBus] Observer ${observer.getObserverId()} subscribed to ${eventType}`);
   }
 
   detach(eventType: string, observer: Observer): void {
@@ -36,12 +46,33 @@ export class EventBusPublisher implements Subject {
   }
 
   async notify(event: DomainEvent): Promise<void> {
+    // 1. In-memory observers
     const list = this.observers.get(event.eventType) || [];
-    console.log(`[EventBus] Publishing ${event.eventType} to ${list.length} observers`);
     await Promise.all(list.map(o => o.update(event)));
+
+    // 2. RabbitMQ publish
+    if (this.rabbitChannel) {
+      try {
+        const queue = `sda.${event.eventType.toLowerCase()}`;
+        await this.rabbitChannel.assertQueue(queue, { durable: true });
+        this.rabbitChannel.sendToQueue(
+          queue,
+          Buffer.from(JSON.stringify(event)),
+          { persistent: true },
+        );
+      } catch (err) {
+        console.error('[EventBus] RabbitMQ publish failed');
+      }
+    }
+
+    // 3. Push to WebSocket server — dashboard gets real-time update
+    try {
+      await axios.post(`${this.wsServerUrl}/events`, event, { timeout: 1000 });
+    } catch (err) {
+      // WS server not running — ignore
+    }
   }
 
-  // Convenience publish methods
   async publishAlertIngested(alertId: string, severity: string): Promise<void> {
     await this.notify({
       eventId: Math.random().toString(36).substr(2, 9),
@@ -62,14 +93,14 @@ export class EventBusPublisher implements Subject {
 
   async publishIncidentStateChanged(
     incidentId: string,
-    previousState: string,
-    newState: string,
+    from: string,
+    to: string,
   ): Promise<void> {
     await this.notify({
       eventId: Math.random().toString(36).substr(2, 9),
       eventType: EventType.INCIDENT_STATE_CHANGED,
       timestamp: new Date().toISOString(),
-      payload: { incidentId, previousState, newState },
+      payload: { incidentId, previousState: from, newState: to },
     });
   }
 
